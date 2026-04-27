@@ -47,7 +47,6 @@ I can explain the results to both engineers and executives.
 | Project | Description | Stack |
 |---|---|---|
 | [🤖 AI Quality Prediction — Automotive](https://github.com/pallavundhad/ai-quality-prediction-automotive) | Random Forest defect detection model · 96.8% accuracy · €2.46M savings case | Python, scikit-learn, Pandas |
-| [📊 Hospital KPI Dashboard](https://github.com/pallavundhad/hospital-kpi-dashboard) | Power BI pipeline analysis for 25,000+ patient records | SQL, Excel, Power BI |
 
 ---
 
