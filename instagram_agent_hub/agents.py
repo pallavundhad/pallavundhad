@@ -1,7 +1,10 @@
-"""The 5 specialist Instagram agents the orchestrator delegates to."""
+"""Agents 2-4. (Agent 1, the Reel Analyzer, is a pipeline in reel_analyzer.py.)"""
 
 from __future__ import annotations
 
+from typing import Any, Callable
+
+from . import instagram_api as ig
 from .base import LocalTool, SubAgent, as_json
 
 WEB_TOOLS = [
@@ -10,138 +13,120 @@ WEB_TOOLS = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Local tool for the growth analyst: exact engagement maths instead of guessing.
-# ---------------------------------------------------------------------------
+def _obj(props: dict[str, Any]) -> dict[str, Any]:
+    return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
 
-def calculate_engagement_metrics(posts: list[dict], followers: int) -> str:
-    rows = []
-    for p in posts:
-        interactions = p["likes"] + p["comments"] + p["saves"] + p["shares"]
-        reach = p["reach"] or 1
-        rows.append(
-            {
-                "post": p["post_id"],
-                "interactions": interactions,
-                "engagement_rate_by_followers_pct": round(100 * interactions / max(followers, 1), 2),
-                "engagement_rate_by_reach_pct": round(100 * interactions / reach, 2),
-                "save_rate_pct": round(100 * p["saves"] / reach, 2),
-                "share_rate_pct": round(100 * p["shares"] / reach, 2),
-                "comment_rate_pct": round(100 * p["comments"] / reach, 2),
-            }
-        )
-    n = len(rows) or 1
-    summary = {
-        "posts_analyzed": len(rows),
-        "followers": followers,
-        "avg_engagement_rate_by_followers_pct": round(sum(r["engagement_rate_by_followers_pct"] for r in rows) / n, 2),
-        "avg_engagement_rate_by_reach_pct": round(sum(r["engagement_rate_by_reach_pct"] for r in rows) / n, 2),
-        "best_post": max(rows, key=lambda r: r["engagement_rate_by_reach_pct"])["post"] if rows else None,
-        "worst_post": min(rows, key=lambda r: r["engagement_rate_by_reach_pct"])["post"] if rows else None,
+
+def _safe(fn: Callable[..., Any]) -> Callable[..., str]:
+    """Wrap an Instagram call so declines and missing setup come back as plain text."""
+    def run(**kwargs: Any) -> str:
+        if not ig.configured():
+            return "Instagram account not connected (set IG_USER_ID and IG_ACCESS_TOKEN)."
+        try:
+            result = fn(**kwargs)
+        except ig.NotApproved as e:
+            return f"NOT DONE - {e} Do not retry; continue without it."
+        return result if isinstance(result, str) else as_json(result)
+    return run
+
+
+def _baseline(limit: int = 12) -> dict[str, Any]:
+    reels = ig.get_recent_reels(limit)
+    n = len(reels) or 1
+    return {
+        "reels_counted": len(reels),
+        "avg_likes": round(sum(r.get("like_count", 0) for r in reels) / n, 1),
+        "avg_comments": round(sum(r.get("comments_count", 0) for r in reels) / n, 1),
+        "note": "Lifetime averages of recent reels - a reel at 3 h is normally well below these.",
     }
-    return as_json({"summary": summary, "per_post": rows})
 
 
-ENGAGEMENT_TOOL = LocalTool(
-    name="calculate_engagement_metrics",
-    description=(
-        "Compute exact engagement rate (by followers and by reach), save rate, share rate and "
-        "comment rate for a list of Instagram posts. Always use this instead of doing the maths yourself."
+MONITOR_TOOLS = [
+    LocalTool("get_reel_metrics", "Live views, reach, likes, comments, shares, saves for a reel.",
+              _obj({"media_id": {"type": "string"}}), _safe(ig.get_reel_metrics)),
+    LocalTool("get_recent_comments", "Latest comments on a reel (id, text, username).",
+              _obj({"media_id": {"type": "string"}}), _safe(lambda media_id: ig.get_comments(media_id))),
+    LocalTool("get_account_baseline", "Average likes/comments of the account's recent reels, to judge what 'viral' means for this account.",
+              _obj({}), _safe(_baseline)),
+    LocalTool("reply_to_comment",
+              "Reply to a comment on the reel. The user is asked to approve every reply before it is posted.",
+              _obj({"comment_id": {"type": "string"}, "comment_text": {"type": "string"}, "message": {"type": "string"}}),
+              _safe(ig.reply_to_comment)),
+    LocalTool("hide_comment", "Hide a spam or abusive comment. The user is asked to approve first.",
+              _obj({"comment_id": {"type": "string"}, "comment_text": {"type": "string"}, "reason": {"type": "string"}}),
+              _safe(ig.hide_comment)),
+]
+
+
+# ---------------------------------------------------------------------------
+# Agent 2 - Content Writer
+# ---------------------------------------------------------------------------
+
+content_writer = SubAgent(
+    name="content_writer",
+    role="Writes reel scripts, captions and hashtags, and gives shot-by-shot guidance on how the reel should look.",
+    system=(
+        "You are an Instagram Reels scriptwriter and creative director. For the brief (and any reel "
+        "breakdown you are given as reference) produce:\n"
+        "1. 3 hook options for the first 2 seconds (spoken line + on-screen text).\n"
+        "2. A full script with timestamps: what is said, on-screen text, and the shot for each beat.\n"
+        "3. How the reel should look: framing, camera angles, lighting, setting, outfit/props, "
+        "transitions, editing pace, text style and placement, music/trending-audio direction, ideal length, "
+        "and cover-frame idea.\n"
+        "4. 2-3 caption options (first line is a hook, clear CTA: save / share / comment keyword).\n"
+        "5. Hashtags: 8-15 split into broad / mid / niche.\n"
+        "Match the creator's language (e.g. Hinglish) and brand voice. Write so it can be shot today."
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "followers": {"type": "integer", "description": "Account follower count."},
-            "posts": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "post_id": {"type": "string"},
-                        "likes": {"type": "integer"},
-                        "comments": {"type": "integer"},
-                        "saves": {"type": "integer"},
-                        "shares": {"type": "integer"},
-                        "reach": {"type": "integer"},
-                    },
-                    "required": ["post_id", "likes", "comments", "saves", "shares", "reach"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-        "required": ["followers", "posts"],
-        "additionalProperties": False,
-    },
-    fn=calculate_engagement_metrics,
 )
 
 
 # ---------------------------------------------------------------------------
-# The five specialists
+# Agent 3 - Viral Strategist
 # ---------------------------------------------------------------------------
 
-trend_researcher = SubAgent(
-    name="trend_researcher",
-    role="Finds current Instagram trends, trending audio/formats, niche hashtags and competitor tactics using live web search.",
+viral_strategist = SubAgent(
+    name="viral_strategist",
+    role="Plans how to make the reel go viral: likes, comments, shares, saves and new followers, before and after posting.",
     system=(
-        "You are an Instagram trend researcher. Use web search to find what is working on Instagram "
-        "right now for the given niche: trending Reels formats and audio, content themes, hashtags "
-        "(mix of broad, mid-size and niche), and what top competitors post. Prefer sources from the last "
-        "60 days and name them. Output a concise brief with sections: Trends, Formats & Audio, "
-        "Hashtag Candidates, Competitor Insights, Opportunities."
+        "You are an Instagram growth and virality strategist. Use web search to check what is working on "
+        "Reels right now in this niche. Give a concrete plan for the reel:\n"
+        "- Before posting: hook/retention fixes, length, trending audio, cover, best time to post (state the "
+        "time zone you assume), collab-post partners, keyword-rich caption.\n"
+        "- First 60 minutes after posting: Story shares with stickers, replying to every comment with a "
+        "question, pinning a comment, DM sharing to close audience, engaging with 10-15 niche accounts.\n"
+        "- Triggers for each metric: comment prompts, save-worthy value, share triggers, follow reason "
+        "(series / part 2 / profile CTA).\n"
+        "- Targets: what views/likes/comments/shares at 1 h and 3 h would count as viral for this account size.\n"
+        "Only white-hat tactics: never suggest buying followers or likes, engagement pods, follow/unfollow, "
+        "or anything against Instagram's terms."
     ),
     server_tools=WEB_TOOLS,
 )
 
-content_creator = SubAgent(
-    name="content_creator",
-    role="Writes post concepts, scroll-stopping hooks, captions, Reel scripts, carousel slide copy and visual briefs.",
+
+# ---------------------------------------------------------------------------
+# Agent 4 - Performance Monitor (first 3 hours)
+# ---------------------------------------------------------------------------
+
+performance_monitor = SubAgent(
+    name="performance_monitor",
+    role="Checks a published reel's performance in its first 3 hours, judges if it's going viral, and takes or recommends action.",
     system=(
-        "You are an Instagram content creator and copywriter. Turn the brief into ready-to-post content: "
-        "a strong 1-line hook for the first 2 seconds / first caption line, the full caption with a "
-        "clear call to action (save, share, comment prompt), a Reel shot-by-shot script or carousel "
-        "slide-by-slide copy, on-screen text, and a visual brief for the designer. Match the brand voice "
-        "given in context. When asked for options, give 2-3 variants labelled A/B/C for testing."
+        "You are an Instagram performance monitor watching a reel in its first 3 hours. You get the metrics "
+        "history at each checkpoint. Steps:\n"
+        "1. Call get_account_baseline (once) and get_reel_metrics / get_recent_comments as needed.\n"
+        "2. Judge the trend: VIRAL, ON TRACK, SLOW or FLOPPING. Base it on view/reach velocity between "
+        "checkpoints, shares and saves per view, and comments, relative to the account's baseline and size. "
+        "Show the numbers behind the verdict.\n"
+        "3. Act. You may reply to genuine comments (keep replies short, human, ending with a question to "
+        "boost the thread) and hide spam - the user approves each one. Everything else is a recommendation "
+        "for the user, e.g.: share to Story with a poll/question sticker, pin a comment, send to close "
+        "friends/broadcast channel, collab invite, boost with ads, post a follow-up or 'part 2', or at the 3-hour "
+        "mark if it clearly flopped: archive and re-post with a new hook/cover/time.\n"
+        "Never delete, archive or re-post yourself - those are the user's call.\n"
+        "End with: VERDICT, KEY NUMBERS, ACTIONS TAKEN, ACTIONS FOR YOU (prioritised), NEXT CHECK FOCUS."
     ),
+    local_tools=MONITOR_TOOLS,
 )
 
-posting_strategist = SubAgent(
-    name="posting_strategist",
-    role="Plans hashtag sets, Instagram SEO keywords, alt text, best posting times, and the content calendar.",
-    system=(
-        "You are an Instagram posting and discoverability strategist. For the content given, produce: "
-        "a hashtag set of 5-15 tags split into broad / mid / niche, keyword-rich caption and profile "
-        "SEO suggestions, alt text, recommended posting day and time windows for the audience's time "
-        "zone (state your assumptions), cross-posting to Stories, and a weekly content calendar mixing "
-        "Reels, carousels and Stories. Be specific and actionable."
-    ),
-)
-
-engagement_manager = SubAgent(
-    name="engagement_manager",
-    role="Runs post-publish marketing: first-hour engagement plan, comment replies, DM scripts, Story promotion, collabs and outreach.",
-    system=(
-        "You are an Instagram community and engagement manager. Focus on what happens AFTER a post is "
-        "published: a first-60-minutes engagement checklist, reply templates for common comment types "
-        "(that invite further replies), DM scripts for leads and collaborators, Story sequences that push "
-        "traffic to the post (polls, quizzes, question boxes, link stickers), collab/creator outreach "
-        "ideas, and community rituals that build repeat interactions. Keep replies human and on-brand; "
-        "never suggest buying followers, engagement pods or spam tactics that break Instagram's terms."
-    ),
-)
-
-growth_analyst = SubAgent(
-    name="growth_analyst",
-    role="Analyses post metrics (engagement rate, saves, shares, reach) and produces a plan to scale interactions and new followers.",
-    system=(
-        "You are an Instagram growth analyst. When metrics are provided, ALWAYS call "
-        "calculate_engagement_metrics first and base your analysis on its numbers. Explain what is "
-        "driving or holding back engagement, compare to typical benchmarks (say they are approximate), "
-        "and give a scaling plan: what to double down on, 2-3 A/B tests to run, posting frequency, and "
-        "target KPIs for the next 30 days. If no metrics are provided, say which metrics to collect from "
-        "Instagram Insights and give a measurement plan."
-    ),
-    local_tools=[ENGAGEMENT_TOOL],
-)
-
-ALL_AGENTS = [trend_researcher, content_creator, posting_strategist, engagement_manager, growth_analyst]
+ALL_AGENTS = [content_writer, viral_strategist, performance_monitor]

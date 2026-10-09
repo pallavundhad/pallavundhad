@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -19,6 +20,49 @@ MAX_TOKENS = 16000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 client = anthropic.Anthropic()
+
+
+# ---------------------------------------------------------------------------
+# Approval gate: nothing is posted, deleted, replied to or hidden on the
+# Instagram account unless the user types "yes". Enforced in code, not just
+# in the prompt, so no agent can skip it.
+# ---------------------------------------------------------------------------
+
+def ask_user_in_terminal(action: str, details: str) -> bool:
+    if not sys.stdin.isatty():
+        print(f"[approval needed] {action} - no terminal to ask, so it was NOT done.")
+        return False
+    print("\n" + "=" * 70)
+    print(f"APPROVAL NEEDED: {action}")
+    print("-" * 70)
+    print(details)
+    print("=" * 70)
+    return input('Type "yes" to allow, anything else to cancel: ').strip().lower() == "yes"
+
+
+approver: Callable[[str, str], bool] = ask_user_in_terminal
+
+
+def approve(action: str, details: str) -> bool:
+    return approver(action, details)
+
+
+def structured(system: str, content: Any, schema: dict[str, Any], effort: str | None = None) -> dict[str, Any]:
+    """One Claude call that returns JSON matching `schema`."""
+    response = client.beta.messages.create(
+        model=MODEL,
+        max_tokens=MAX_TOKENS,
+        system=system,
+        messages=[{"role": "user", "content": content}],
+        output_config={"effort": effort or SUBAGENT_EFFORT, "format": {"type": "json_schema", "schema": schema}},
+        betas=[FALLBACK_BETA],
+        fallbacks="default",
+    )
+    if response.stop_reason == "refusal":
+        raise RuntimeError("Claude declined this request.")
+    if response.stop_reason == "max_tokens":
+        raise RuntimeError("Response was cut off (max_tokens).")
+    return json.loads(text_of(response.content))
 
 
 def text_of(content: list[Any]) -> str:
