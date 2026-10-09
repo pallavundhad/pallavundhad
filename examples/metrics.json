@@ -1,0 +1,8 @@
+{
+  "followers": 4200,
+  "posts": [
+    {"post_id": "reel-morning-routine", "likes": 610, "comments": 48, "saves": 95, "shares": 72, "reach": 9800},
+    {"post_id": "carousel-5-tips", "likes": 320, "comments": 21, "saves": 140, "shares": 30, "reach": 5100},
+    {"post_id": "photo-product", "likes": 150, "comments": 6, "saves": 8, "shares": 2, "reach": 2300}
+  ]
+}
