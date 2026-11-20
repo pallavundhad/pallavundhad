@@ -1,0 +1,1079 @@
+{
+  "name": "AI Job Hunter - CV-based search, tailored CV, auto-apply, sheet tracking",
+  "nodes": [
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000001",
+      "name": "Setup Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -480
+      ],
+      "parameters": {
+        "content": "## AI Job Hunter - setup\n1. **Config**: client name, email, location, CV text, Adzuna keys.\n2. The 3 **Claude** nodes: credential type *Header Auth*, Name `x-api-key`, Value = Anthropic API key (same credential for all 3).\n3. Both **Sheet** nodes: connect Google, pick the tracking sheet (headers: applications-sheet-header.csv).\n4. **Google Drive** nodes: connect Google, pick a folder for the CVs.\n5. Both **Gmail** nodes: connect the client's Gmail.\n6. *Execute workflow* to test, then set the workflow **Active**.\nKeep `autoApplyByEmail: false` until you have checked a few CVs.",
+        "width": 560,
+        "height": 340
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000002",
+      "name": "Step 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        420,
+        -160
+      ],
+      "parameters": {
+        "content": "### 1. Job search from the CV",
+        "width": 640,
+        "height": 520,
+        "color": 5
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000003",
+      "name": "Step 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        -160
+      ],
+      "parameters": {
+        "content": "### 2. Read the job, score fit, save title + job description to the sheet",
+        "width": 1100,
+        "height": 520,
+        "color": 4
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000004",
+      "name": "Step 3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        -160
+      ],
+      "parameters": {
+        "content": "### 3. Improve the CV for the job description (Google Doc + PDF)",
+        "width": 1100,
+        "height": 520,
+        "color": 6
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000005",
+      "name": "Step 4",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3540,
+        -400
+      ],
+      "parameters": {
+        "content": "### 4. Apply (email with CV attached) and 5. save improved CV + status to the sheet",
+        "width": 1100,
+        "height": 760,
+        "color": 3
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000006",
+      "name": "Every Morning",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000007",
+      "name": "Test Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000008",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// =====================================================\n//  CLIENT SETTINGS - edit this node for each client\n// =====================================================\nreturn [{\n  json: {\n    candidateName: 'Alex Example',\n    digestEmail: 'client@example.com',      // daily summary goes here\n\n    // --- Where to search ---\n    location: 'Berlin',                     // city/region ('' = anywhere)\n    adzunaCountry: 'de',                    // de, at, gb, us, in, nl, fr ...\n    adzunaAppId: 'YOUR_ADZUNA_APP_ID',      // free key: developer.adzuna.com\n    adzunaAppKey: 'YOUR_ADZUNA_APP_KEY',\n    maxDaysOld: 2,                          // only jobs posted in the last N days\n\n    // Leave empty to let the AI build the searches from the CV.\n    searchQueriesOverride: [],              // e.g. ['data analyst', 'werkstudent data']\n    titleMustInclude: [],                   // e.g. ['analyst', 'analytics']\n    excludeKeywords: ['unpaid', 'commission only', 'head of', 'director'],\n    maxSearchQueries: 3,\n\n    // --- AI ---\n    modelScoring: 'claude-opus-5-5',        // reads every job (see README for cheaper choice)\n    modelWriting: 'claude-opus-5-5',        // rewrites the CV and cover letter\n    maxJobsToScore: 25,                     // max jobs the AI reads per run\n    minScore: 70,                           // 0-100, only tailor + apply at or above this\n    maxApplicationsPerDay: 5,\n    applicationLanguage: 'auto',            // 'auto' = same language as the job ad\n\n    // --- Applying ---\n    // false = prepare everything and let the client press send (recommended at first)\n    // true  = email the employer automatically when the ad gives an application email\n    autoApplyByEmail: false,\n\n    preferences: `Working student or junior role, 15-20 h/week during semester,\nhybrid or remote, open to Berlin, Munich, Nuremberg. No pure sales roles.`,\n\n    // Paste the client's full CV as plain text (include contact details).\n    // The AI only uses facts from here.\n    cvText: `ALEX EXAMPLE\nalex@example.com | +49 000 000000 | Berlin | linkedin.com/in/alex-example\n\nPROFILE\nBusiness informatics student focused on data analysis and reporting.\n\nSKILLS\nPython (pandas, scikit-learn), SQL, Power BI, DAX, Excel\n\nEXPERIENCE\nData Analyst Intern, Example GmbH, Berlin (03/2025 - 08/2025)\n- Built 6 Power BI dashboards for the sales team\n- Automated weekly reporting with Python, saving about 4 hours per week\n\nEDUCATION\nB.Sc. Business Informatics, Example University (expected 2026)\n\nLANGUAGES\nEnglish C1, German B2`\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000009",
+      "name": "Prepare Search Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Step 1: ask Claude what to search for, based on the CV.\nconst cfg = $('Config').first().json;\nconst FALLBACK_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-2', 'claude-opus-5'];\n\nconst body = {\n  model: cfg.modelScoring,\n  max_tokens: 4000,\n  system: 'You are a career coach who knows how job boards work.',\n  messages: [{ role: 'user', content: `Read this CV and the preferences, then plan a job search.\n\nCountry code: ${cfg.adzunaCountry}\nLocation: ${cfg.location || 'any'}\n\nPREFERENCES:\n${cfg.preferences}\n\nCV:\n${cfg.cvText}\n\nReturn:\n- searchQueries: 1 to ${cfg.maxSearchQueries || 3} short job-board searches (1-3 words each) for the roles this person can realistically get. Use the words employers in that country put in job titles (for Germany, include German terms such as \"Werkstudent\" where it fits).\n- titleKeywords: 3 to 10 lowercase single words or word stems; a relevant job title should contain at least one of them.` }],\n  output_config: {\n    effort: 'low',\n    format: { type: 'json_schema', schema: {\n      type: 'object',\n      properties: {\n        searchQueries: { type: 'array', items: { type: 'string' } },\n        titleKeywords: { type: 'array', items: { type: 'string' } },\n      },\n      required: ['searchQueries', 'titleKeywords'],\n      additionalProperties: false,\n    } },\n  },\n};\nif (FALLBACK_MODELS.includes(cfg.modelScoring)) body.fallbacks = 'default';\nreturn [{ json: { requestBody: body } }];\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000000a",
+      "name": "Plan Search from CV (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2026-10-21"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "server-side-fallback-2026-07-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 2000
+            }
+          },
+          "timeout": 300000
+        }
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000000b",
+      "name": "Read Search Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Turns the AI search plan into one item per search query.\nconst cfg = $('Config').first().json;\nconst res = $input.first().json || {};\nlet plan = { searchQueries: [], titleKeywords: [] };\nconst text = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');\ntry { plan = { ...plan, ...JSON.parse(text) }; } catch (e) { /* use overrides below */ }\n\nconst queries = (cfg.searchQueriesOverride || []).length ? cfg.searchQueriesOverride : plan.searchQueries;\nconst titleKeywords = (cfg.titleMustInclude || []).length ? cfg.titleMustInclude : plan.titleKeywords;\n\nif (!queries.length) {\n  const why = res.error ? JSON.stringify(res.error).slice(0, 300) : (res.stop_reason || 'no queries returned');\n  throw new Error('Could not build a search from the CV (' + why + '). Check the Anthropic credential or fill searchQueriesOverride in Config.');\n}\nreturn queries.slice(0, cfg.maxSearchQueries || 3).map((q) => ({ json: { query: q, titleKeywords } }));\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000000c",
+      "name": "Search Adzuna",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1060,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "=https://api.adzuna.com/v1/api/jobs/{{ $('Config').first().json.adzunaCountry }}/search/1",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "={{ $('Config').first().json.adzunaAppId }}"
+            },
+            {
+              "name": "app_key",
+              "value": "={{ $('Config').first().json.adzunaAppKey }}"
+            },
+            {
+              "name": "what",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "where",
+              "value": "={{ $('Config').first().json.location }}"
+            },
+            {
+              "name": "max_days_old",
+              "value": "={{ $('Config').first().json.maxDaysOld }}"
+            },
+            {
+              "name": "results_per_page",
+              "value": "50"
+            },
+            {
+              "name": "sort_by",
+              "value": "date"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000000d",
+      "name": "Search Remote Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1060,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "https://remotive.com/api/remote-jobs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "search",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000000e",
+      "name": "Combine Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1340,
+        100
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000000f",
+      "name": "Clean, Filter & Dedupe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Merges results from every job board, applies the keyword filter\n// and skips jobs already handled in earlier runs.\nconst cfg = $('Config').first().json;\nconst titleKeywords = ($('Read Search Plan').first().json.titleKeywords || []).map((s) => String(s).toLowerCase().trim()).filter(Boolean);\nconst exclude = (cfg.excludeKeywords || []).map((s) => String(s).toLowerCase());\n\nconst clean = (s) => String(s || '')\n  .replace(/<[^>]*>/g, ' ')\n  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '\"')\n  .replace(/&#39;/g, \"'\").replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n  .replace(/\\s+/g, ' ').trim();\n\nconst jobs = [];\nfor (const item of $input.all()) {\n  const d = item.json || {};\n  if (Array.isArray(d.results)) {            // Adzuna\n    for (const r of d.results) jobs.push({\n      source: 'Adzuna',\n      title: clean(r.title),\n      company: clean(r.company && r.company.display_name),\n      location: clean(r.location && r.location.display_name),\n      description: clean(r.description),\n      url: r.redirect_url,\n      salary: r.salary_min ? `${Math.round(r.salary_min)}-${Math.round(r.salary_max || r.salary_min)}` : '',\n    });\n  }\n  if (Array.isArray(d.jobs)) {               // Remotive (remote jobs, full descriptions)\n    for (const r of d.jobs) jobs.push({\n      source: 'Remotive',\n      title: clean(r.title),\n      company: clean(r.company_name),\n      location: clean(r.candidate_required_location) || 'Remote',\n      description: clean(r.description),\n      url: r.url,\n      salary: clean(r.salary),\n    });\n  }\n}\n\nconst store = $getWorkflowStaticData('global');   // persists for the active workflow\nstore.seen = store.seen || {};\nconst now = Date.now();\nconst TTL = 60 * 24 * 60 * 60 * 1000;            // forget jobs after 60 days\nfor (const k of Object.keys(store.seen)) if (now - store.seen[k] > TTL) delete store.seen[k];\n\nconst picked = [];\nconst thisRun = new Set();\nfor (const j of jobs) {\n  if (!j.url || !j.title) continue;\n  const title = ' ' + j.title.toLowerCase() + ' ';\n  const text = (j.title + ' ' + j.description).toLowerCase();\n  if (titleKeywords.length && !titleKeywords.some((k) => title.includes(k))) continue;\n  if (exclude.some((x) => text.includes(x))) continue;\n  const key = (j.title + '|' + j.company).toLowerCase();\n  if (store.seen[key] || thisRun.has(key)) continue;\n  thisRun.add(key);\n  picked.push(j);\n  if (picked.length >= (cfg.maxJobsToScore || 25)) break;\n}\nfor (const j of picked) store.seen[(j.title + '|' + j.company).toLowerCase()] = now;\n\nreturn picked.map((j) => ({ json: j }));\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000010",
+      "name": "Fetch Job Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        100
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 20000,
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1000
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000011",
+      "name": "Add Page Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1940,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Adds the text of the job's web page (job boards often only give a short summary).\nconst job = $('Clean, Filter & Dedupe').item.json;\nconst html = typeof $json.data === 'string' ? $json.data : '';\nconst pageText = html\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n  .replace(/<(br|\\/p|\\/li|\\/h\\d|\\/div)[^>]*>/gi, '\\n')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\")\n  .replace(/[ \\t]+/g, ' ').replace(/\\n\\s*\\n+/g, '\\n').trim()\n  .slice(0, 12000);\nreturn { json: { ...job, pageText } };\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000012",
+      "name": "Prepare Score Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        -60
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Step 2a: Claude scores the job against the CV and extracts the clean job description.\nconst cfg = $('Config').first().json;\nconst job = $json;\nconst FALLBACK_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-2', 'claude-opus-5'];\n\nconst system = `You are an experienced recruiter screening job ads for one candidate.\nJudge honestly how well each job fits the candidate's real experience, skills, seniority,\nlocation, languages and preferences. Be strict: 70 or more means a realistic chance of an\ninterview; under 50 means they should not apply.\n\nCANDIDATE PREFERENCES:\n${cfg.preferences}\n\nCANDIDATE CV:\n${cfg.cvText}`;\n\nconst user = `JOB (from job board)\nTitle: ${job.title}\nCompany: ${job.company}\nLocation: ${job.location}\nSalary: ${job.salary || 'not stated'}\nSummary: ${job.description}\n\nTEXT OF THE JOB WEB PAGE (may include menus and other noise, may be empty):\n${job.pageText || '(not available)'}\n\nReturn:\n- score: integer 0-100\n- verdict: \"strong\", \"possible\" or \"weak\"\n- reasons: at most 2 sentences on why it fits\n- gaps: at most 2 sentences on what is missing, or \"none\"\n- jobDescription: the job description as written in the ad (tasks, requirements, benefits), without website menus or cookie text; use the summary if the page text has nothing better; at most 900 words\n- applyEmail: the email address the ad says to send applications to, or \"\" if there is none. Never guess one.\n- adLanguage: language the ad is written in, e.g. \"German\" or \"English\"`;\n\nconst body = {\n  model: cfg.modelScoring,\n  max_tokens: 8000,\n  system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],\n  messages: [{ role: 'user', content: user }],\n  output_config: {\n    effort: 'low',\n    format: { type: 'json_schema', schema: {\n      type: 'object',\n      properties: {\n        score: { type: 'integer' },\n        verdict: { type: 'string', enum: ['strong', 'possible', 'weak'] },\n        reasons: { type: 'string' },\n        gaps: { type: 'string' },\n        jobDescription: { type: 'string' },\n        applyEmail: { type: 'string' },\n        adLanguage: { type: 'string' },\n      },\n      required: ['score', 'verdict', 'reasons', 'gaps', 'jobDescription', 'applyEmail', 'adLanguage'],\n      additionalProperties: false,\n    } },\n  },\n};\nif (FALLBACK_MODELS.includes(cfg.modelScoring)) body.fallbacks = 'default';\n\nconst { pageText, ...jobWithoutPage } = job;\nreturn { json: { job: jobWithoutPage, requestBody: body } };\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000013",
+      "name": "Score Fit + Extract JD (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2340,
+        -60
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2026-10-21"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "server-side-fallback-2026-07-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 3,
+              "batchInterval": 2000
+            }
+          },
+          "timeout": 300000
+        }
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000014",
+      "name": "Read Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Reads Claude's score and job description.\nconst job = $('Prepare Score Request').item.json.job;\nconst res = $json || {};\nlet out = { score: 0, verdict: 'weak', reasons: '', gaps: '', jobDescription: '', applyEmail: '', adLanguage: '' };\n\nif (res.error) {\n  out.reasons = 'AI error: ' + JSON.stringify(res.error).slice(0, 300);\n} else if (res.stop_reason === 'refusal') {\n  out.reasons = 'AI declined to score this job.';\n} else {\n  const text = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');\n  try { out = { ...out, ...JSON.parse(text) }; } catch (e) { out.reasons = 'Could not read AI answer.'; }\n}\n\nreturn { json: {\n  ...job,\n  score: Number(out.score) || 0,\n  verdict: out.verdict,\n  reasons: out.reasons,\n  gaps: out.gaps,\n  jobDescription: out.jobDescription || job.description,\n  applyEmail: String(out.applyEmail || '').trim(),\n  adLanguage: out.adLanguage,\n} };\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000015",
+      "name": "Sheet Row: Job + JD",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Step 2b: row for the sheet - title + job description (keys = sheet column headers).\nconst cfg = $('Config').first().json;\nconst j = $json;\nreturn { json: {\n  'Job URL': j.url,\n  'Date Found': new Date().toISOString().slice(0, 10),\n  'Status': j.score >= (cfg.minScore || 70) ? 'Matched - preparing CV' : 'Low fit - skipped',\n  'Score': j.score,\n  'Title': j.title,\n  'Company': j.company,\n  'Location': j.location,\n  'Source': j.source,\n  'Job Description': String(j.jobDescription || '').slice(0, 45000),\n  'Why it fits': j.reasons,\n  'Gaps': j.gaps,\n  'Apply Email': j.applyEmail,\n} };\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000016",
+      "name": "Save Job to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2540,
+        180
+      ],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "Job URL"
+          ],
+          "schema": []
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000017",
+      "name": "Keep Best Matches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2740,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Keeps only good matches, best first, up to the daily limit.\nconst cfg = $('Config').first().json;\nreturn $('Read Score').all()\n  .map((i) => i.json)\n  .filter((j) => j.score >= (cfg.minScore || 70))\n  .sort((a, b) => b.score - a.score)\n  .slice(0, cfg.maxApplicationsPerDay || 5)\n  .map((j) => ({ json: j }));\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000018",
+      "name": "Prepare Tailor Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2940,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Step 3: Claude rewrites the CV for this job description and writes the cover letter.\nconst cfg = $('Config').first().json;\nconst job = $json;\nconst FALLBACK_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-2', 'claude-opus-5'];\nconst lang = (cfg.applicationLanguage && cfg.applicationLanguage !== 'auto')\n  ? cfg.applicationLanguage : (job.adLanguage || 'the language of the job ad');\n\nconst system = `You tailor job applications for one candidate. Hard rules:\n- Use ONLY facts from the candidate's CV. Never invent employers, dates, degrees, tools,\n  certificates, numbers or achievements. If the job needs something the CV lacks, leave it out.\n- You may reorder sections, rewrite bullet points, change emphasis and use the job ad's\n  keywords where the CV supports them (this helps applicant tracking systems).\n- Keep the candidate's contact details exactly as in the CV.\n- No cliches (\"I am writing to express my interest\", \"passionate team player\").\n\nCANDIDATE: ${cfg.candidateName}\n\nCANDIDATE CV:\n${cfg.cvText}`;\n\nconst user = `JOB AD\nTitle: ${job.title}\nCompany: ${job.company}\nLocation: ${job.location}\n\n${job.jobDescription}\n\nScreening notes - fits: ${job.reasons} Gaps: ${job.gaps}\n\nWrite everything in ${lang}. Return:\n- tailoredCv: the complete improved CV as plain text, ready to paste into a document. Name and contact line first, then sections in CAPITALS (for example PROFILE, SKILLS, EXPERIENCE, EDUCATION, LANGUAGES), \"- \" for bullet points, max about 1 page.\n- cvChanges: 2 to 4 short lines saying what you changed for this job\n- coverLetter: at most 250 words, specific to this company and role, signed with the candidate's name\n- emailSubject: subject line for an application email, e.g. \"Application: <job title> - <name>\"`;\n\nconst body = {\n  model: cfg.modelWriting,\n  max_tokens: 16000,\n  system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],\n  messages: [{ role: 'user', content: user }],\n  output_config: {\n    effort: 'medium',\n    format: { type: 'json_schema', schema: {\n      type: 'object',\n      properties: {\n        tailoredCv: { type: 'string' },\n        cvChanges: { type: 'string' },\n        coverLetter: { type: 'string' },\n        emailSubject: { type: 'string' },\n      },\n      required: ['tailoredCv', 'cvChanges', 'coverLetter', 'emailSubject'],\n      additionalProperties: false,\n    } },\n  },\n};\nif (FALLBACK_MODELS.includes(cfg.modelWriting)) body.fallbacks = 'default';\n\nreturn { json: { job, requestBody: body } };\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000019",
+      "name": "Improve CV for JD (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3140,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2026-10-21"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "server-side-fallback-2026-07-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 2,
+              "batchInterval": 2000
+            }
+          },
+          "timeout": 300000
+        }
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000001a",
+      "name": "Read Tailored CV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3340,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Reads the tailored CV and cover letter.\nconst cfg = $('Config').first().json;\nconst job = $('Prepare Tailor Request').item.json.job;\nconst res = $json || {};\nlet t = { tailoredCv: '', cvChanges: '', coverLetter: '', emailSubject: '' };\nlet problem = '';\n\nif (res.error) problem = 'AI error: ' + JSON.stringify(res.error).slice(0, 300);\nelse if (res.stop_reason === 'refusal') problem = 'AI declined to write this application.';\nelse {\n  const text = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');\n  try { t = { ...t, ...JSON.parse(text) }; } catch (e) { problem = 'Could not read AI answer.'; }\n}\n\nconst safe = (s) => String(s || '').replace(/[\\\\/:*?\"<>|]+/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 60);\nreturn { json: {\n  job,\n  ...t,\n  problem,\n  emailSubject: t.emailSubject || `Application: ${job.title} - ${cfg.candidateName}`,\n  docName: `CV - ${safe(cfg.candidateName)} - ${safe(job.company)} - ${safe(job.title)}`,\n  // Google Drive cannot create an empty file, so keep a placeholder on errors.\n  docText: t.tailoredCv || ('CV could not be generated: ' + (problem || 'unknown error')),\n} };\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000001b",
+      "name": "Create CV Google Doc",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        3340,
+        300
+      ],
+      "parameters": {
+        "operation": "createFromText",
+        "content": "={{ $json.docText }}",
+        "name": "={{ $json.docName }}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "root",
+          "mode": "list",
+          "cachedResultName": "/ (Root folder)"
+        },
+        "options": {
+          "convertToGoogleDocument": true
+        }
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000001c",
+      "name": "Download CV as PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        3600,
+        100
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "application/pdf"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000001d",
+      "name": "Decide How to Apply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3800,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Step 4: decide how to apply and attach the PDF.\nconst cfg = $('Config').first().json;\nconst t = $('Read Tailored CV').item.json;\nconst doc = $('Create CV Google Doc').item.json || {};\nconst binary = $input.item.binary || {};\nconst today = new Date().toISOString().slice(0, 10);\n\nconst safe = (s) => String(s || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);\nconst email = String(t.job.applyEmail || '').trim();\nconst validEmail = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email);\nconst hasPdf = !!binary.data;\nconst ok = hasPdf && !!t.tailoredCv && !t.problem;\nconst sendNow = cfg.autoApplyByEmail === true && validEmail && ok;\n\nif (hasPdf) binary.data.fileName = `CV_${safe(cfg.candidateName)}_${safe(t.job.company)}.pdf`;\n\nconst status = !ok ? 'Error - check CV' + (t.problem ? ': ' + t.problem : '')\n  : sendNow ? 'Applied by email'\n  : validEmail ? 'Ready - review and send email'\n  : 'Ready - apply on company website';\n\nreturn {\n  json: {\n    ...t,\n    docLink: doc.id ? `https://docs.google.com/document/d/${doc.id}/edit` : '',\n    sendNow,\n    status,\n    appliedOn: sendNow ? today : '',\n  },\n  binary,\n};\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000001e",
+      "name": "Only Auto-Apply Jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4020,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "// Only jobs that should be applied to by email right now.\nreturn $input.all().filter((i) => i.json.sendNow === true);\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-00000000001f",
+      "name": "Send Application (Gmail)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        4240,
+        -100
+      ],
+      "parameters": {
+        "sendTo": "={{ $json.job.applyEmail }}",
+        "subject": "={{ $json.emailSubject }}",
+        "emailType": "text",
+        "message": "={{ $json.coverLetter }}",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "data"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000020",
+      "name": "Sheet Row: Improved CV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4020,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Step 5: write the improved CV and result back into the same sheet row.\nconst j = $json;\nreturn { json: {\n  'Job URL': j.job.url,\n  'Status': j.status,\n  'Tailored CV': j.tailoredCv,\n  'CV Changes': j.cvChanges,\n  'Cover Letter': j.coverLetter,\n  'CV Doc Link': j.docLink,\n  'Applied On': j.appliedOn,\n} };\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000021",
+      "name": "Save Improved CV to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4240,
+        200
+      ],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "Job URL"
+          ],
+          "schema": []
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000022",
+      "name": "Build Summary Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4440,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// One summary email for the client.\nconst cfg = $('Config').first().json;\nconst rows = $('Decide How to Apply').all().map((i) => i.json);\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst nl = (s) => esc(s).replace(/\\n/g, '<br>');\nconst today = new Date().toISOString().slice(0, 10);\nconst applied = rows.filter((r) => r.sendNow).length;\n\nconst btn = (href, label, color) => href\n  ? `<a href=\"${esc(href)}\" style=\"background:${color};color:#fff;padding:8px 14px;border-radius:4px;text-decoration:none;margin-right:8px\">${label}</a>` : '';\n\nconst cards = rows.map((r) => `\n<div style=\"border:1px solid #ddd;border-radius:8px;padding:16px;margin:0 0 16px\">\n  <h3 style=\"margin:0 0 4px\">${esc(r.job.title)} &middot; ${esc(r.job.company)}</h3>\n  <p style=\"margin:0 0 8px;color:#555\">${esc(r.job.location)} &middot; Fit <b>${esc(r.job.score)}</b>/100 &middot; <b>${esc(r.status)}</b></p>\n  <p style=\"margin:0 0 8px\"><b>Why it fits:</b> ${esc(r.job.reasons)}<br><b>Gaps:</b> ${esc(r.job.gaps)}</p>\n  <p style=\"margin:0 0 8px\"><b>CV changes:</b><br>${nl(r.cvChanges)}</p>\n  <p style=\"margin:12px 0\">${btn(r.job.url, 'Open job', '#1a73e8')}${btn(r.docLink, 'Open tailored CV', '#188038')}</p>\n  <details><summary><b>Cover letter</b></summary><p>${nl(r.coverLetter)}</p></details>\n</div>`).join('');\n\nconst html = `<div style=\"font-family:Arial,sans-serif;max-width:680px\">\n<h2>${rows.length} tailored application${rows.length === 1 ? '' : 's'} for ${esc(cfg.candidateName)}</h2>\n<p>${applied} sent by email automatically. The rest are ready: open the tailored CV, download it as PDF and apply with the job link. Everything is also in your tracking sheet.</p>\n${cards}\n<p style=\"color:#888;font-size:12px\">CVs and letters are written by AI from your own CV. Check them before you send anything.</p>\n</div>`;\n\nreturn [{ json: { to: cfg.digestEmail, subject: `${rows.length} tailored applications for ${cfg.candidateName} - ${today}`, html } }];\n"
+      }
+    },
+    {
+      "id": "6a0b5c1e-7d2f-4e3a-9b1c-000000000023",
+      "name": "Email Summary to Client",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        4640,
+        200
+      ],
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Morning": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Run": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Prepare Search Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Search Plan": {
+      "main": [
+        [
+          {
+            "node": "Plan Search from CV (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Search from CV (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Read Search Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Search Plan": {
+      "main": [
+        [
+          {
+            "node": "Search Adzuna",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search Remote Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Adzuna": {
+      "main": [
+        [
+          {
+            "node": "Combine Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Remote Jobs": {
+      "main": [
+        [
+          {
+            "node": "Combine Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Combine Sources": {
+      "main": [
+        [
+          {
+            "node": "Clean, Filter & Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean, Filter & Dedupe": {
+      "main": [
+        [
+          {
+            "node": "Fetch Job Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Job Page": {
+      "main": [
+        [
+          {
+            "node": "Add Page Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Page Text": {
+      "main": [
+        [
+          {
+            "node": "Prepare Score Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Score Request": {
+      "main": [
+        [
+          {
+            "node": "Score Fit + Extract JD (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Fit + Extract JD (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Read Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Score": {
+      "main": [
+        [
+          {
+            "node": "Sheet Row: Job + JD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheet Row: Job + JD": {
+      "main": [
+        [
+          {
+            "node": "Save Job to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Job to Sheet": {
+      "main": [
+        [
+          {
+            "node": "Keep Best Matches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep Best Matches": {
+      "main": [
+        [
+          {
+            "node": "Prepare Tailor Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Tailor Request": {
+      "main": [
+        [
+          {
+            "node": "Improve CV for JD (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Improve CV for JD (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Read Tailored CV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Tailored CV": {
+      "main": [
+        [
+          {
+            "node": "Create CV Google Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create CV Google Doc": {
+      "main": [
+        [
+          {
+            "node": "Download CV as PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download CV as PDF": {
+      "main": [
+        [
+          {
+            "node": "Decide How to Apply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide How to Apply": {
+      "main": [
+        [
+          {
+            "node": "Only Auto-Apply Jobs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sheet Row: Improved CV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Auto-Apply Jobs": {
+      "main": [
+        [
+          {
+            "node": "Send Application (Gmail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheet Row: Improved CV": {
+      "main": [
+        [
+          {
+            "node": "Save Improved CV to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Improved CV to Sheet": {
+      "main": [
+        [
+          {
+            "node": "Build Summary Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary Email": {
+      "main": [
+        [
+          {
+            "node": "Email Summary to Client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
