@@ -5,12 +5,29 @@ An n8n workflow that runs every morning and does a job search for one person:
 | Step | What happens | Where it ends up |
 |---|---|---|
 | 1. Search from the CV | Claude reads the CV and decides what to search for (job titles, German and English terms), then searches Adzuna and Remotive | - |
-| 2. Read and save the job | Opens every new job page, scores the fit 0-100 and extracts the full job description | Sheet: **Title, Company, Job Description, Score, Why it fits, Gaps, Apply Email** |
+| 2. Read and save the job | Opens every new job page, extracts the full job description and gives two scores (see below) | Sheet: **Title, Company, Job Description, Fit Score, CV Match, Missing Keywords, Why it fits, Gaps, Apply Email** |
 | 3. Improve the CV | For good matches, Claude rewrites the CV for that job description (only true facts from the original CV) and writes a cover letter | Google Doc + PDF in Drive |
-| 4. Apply | If the ad gives an application email, it sends the cover letter with the tailored CV PDF attached from the client's Gmail. Otherwise it marks the job "Ready - apply on company website" | Gmail |
+| 4. Apply | If the ad gives an application email, it sends the cover letter with the tailored CV PDF attached from your Gmail. Otherwise it marks the job "Ready - apply on company website" | Gmail |
 | 5. Save the result | Writes the improved CV, what changed, the cover letter, the Doc link and the status into the **same row** | Sheet |
 
-The client also gets one summary email a day with every job, its tailored CV link and its cover letter.
+You also get one summary email a day with every job, its tailored CV link and its cover letter.
+
+### The two scores
+
+| Column | What it measures | Used for |
+|---|---|---|
+| **Fit Score** (0-100) | Overall chance of an interview: skills, experience, seniority, location, language and your preferences | Deciding which jobs get a tailored CV (`minScore`) |
+| **CV Match (original CV)** (0-100) | Only how much of the job description your CV **as it is now** already covers | Seeing how much tailoring a job needs. A low match with a high fit means your CV undersells you for that job |
+| **Missing Keywords** | Important skills from the job description that your CV doesn't show | The tailored CV adds them only where your real experience supports them. The rest are gaps to work on |
+
+---
+
+## Your own accounts, your own AI
+
+This is a **template**. Everything runs in **your** n8n with **your** accounts:
+- **AI:** your own Anthropic API key. You pay Anthropic directly for what you use (see costs below). The seller never sees your key or your data.
+- **Google:** your own Sheets, Drive and Gmail. Applications are sent from your address.
+- **Job search:** your own free Adzuna key.
 
 ---
 
@@ -27,7 +44,7 @@ The client also gets one summary email a day with every job, its tailored CV lin
 
 1. **Import:** in n8n, go to *Workflows → Import from file* and choose `workflow.json`.
 2. **Tracking sheet:** create a Google Sheet. Paste the first line of `applications-sheet-header.csv` into row 1. Column names must match exactly.
-3. **Config node:** open it and fill in the client's name, email, location, country code, Adzuna keys, preferences and **the full CV as plain text** (including contact details).
+3. **Config node:** open it and fill in your name, email, location, country code, Adzuna keys, preferences and **the full CV as plain text** (including contact details).
 4. **Claude nodes (3):** open *Plan Search from CV*. Under Credential, create a new **Header Auth** credential:
    - Name: `x-api-key`
    - Value: the Anthropic API key
@@ -35,7 +52,7 @@ The client also gets one summary email a day with every job, its tailored CV lin
    Choose the same credential in *Score Fit + Extract JD* and *Improve CV for JD*.
 5. **Sheet nodes (2):** connect your Google account and pick the sheet and tab in both *Save Job to Sheet* and *Save Improved CV to Sheet*.
 6. **Google Drive nodes (2):** connect Google. In *Create CV Google Doc*, choose the folder where the CVs should go.
-7. **Gmail nodes (2):** connect the **client's** Gmail, since applications are sent from their address.
+7. **Gmail nodes (2):** connect your Gmail. Applications are sent from this address.
 8. **Test:** click *Execute workflow*. Check the sheet, the Google Docs and the summary email.
 9. **Go live:** switch the workflow to **Active**. It runs every day at 07:00 (change this in *Every Morning*).
 
@@ -43,10 +60,10 @@ The client also gets one summary email a day with every job, its tailored CV lin
 
 ## Turning on automatic applying
 
-`autoApplyByEmail` is `false` by default. Every CV is prepared and logged, and the client presses send.
+`autoApplyByEmail` is `false` by default. Every CV is prepared and logged, and you press send.
 Set it to `true` once you have checked a few tailored CVs. From then on, jobs whose ad gives an application email address are applied to automatically (at most `maxApplicationsPerDay` per day).
 
-**Important:** jobs that need an online form (Workday, SuccessFactors, Personio, LinkedIn Easy Apply…) are **not** submitted automatically. Those sites forbid bots and use CAPTCHAs. The workflow prepares the tailored CV PDF and the cover letter and puts the job link in the sheet and the email, so applying takes the client about 2 minutes.
+**Important:** jobs that need an online form (Workday, SuccessFactors, Personio, LinkedIn Easy Apply…) are **not** submitted automatically. Those sites forbid bots and use CAPTCHAs. The workflow prepares the tailored CV PDF and the cover letter and puts the job link in the sheet and the email, so applying takes about 2 minutes.
 
 ## Settings in the Config node
 
@@ -61,7 +78,7 @@ Set it to `true` once you have checked a few tailored CVs. From then on, jobs wh
 | `applicationLanguage` | `auto` writes in the language of the job ad. Or set `English` / `German` |
 | `modelScoring` / `modelWriting` | Which Claude model to use (see costs) |
 
-## Running costs (Anthropic API, rough estimate per client)
+## Running costs (paid by you to Anthropic, rough estimate)
 
 Based on 25 jobs read and 5 CVs tailored per day:
 
@@ -70,17 +87,17 @@ Based on 25 jobs read and 5 CVs tailored per day:
 | `claude-opus-5-5` for both (default, best quality) | about $1.60 | about $48 |
 | `modelScoring: 'claude-haiku-5-5'` + Opus for writing | about $0.40 | about $12 |
 
-Reading jobs is most of the cost. Switching only `modelScoring` to Haiku cuts the cost by roughly 75% and keeps Opus for the CV writing that the client sees. Lowering `maxJobsToScore` also helps.
+Reading jobs is most of the cost. Switching only `modelScoring` to Haiku cuts the cost by roughly 75% and keeps Opus for the CV writing you send out. Lowering `maxJobsToScore` also helps.
 
 ## Adding more job sources
 
 Any source with an API or RSS feed can feed **Combine Sources**. Add an HTTP Request node after *Read Search Plan* and connect it to a new input on *Combine Sources* (raise its *Number of Inputs*). Then add a small block in *Clean, Filter & Dedupe* that maps the new fields (title, company, location, description, url). Useful additions in Germany: the Bundesagentur für Arbeit job search API, company career pages (Greenhouse / Lever / Personio job feeds), StepStone RSS.
 
-Don't scrape LinkedIn or Indeed. It breaks their terms and gets the client's account blocked.
+Don't scrape LinkedIn or Indeed. It breaks their terms and gets your account blocked.
 
 ## Changing the sheet to Excel
 
-The workflow uses Google Sheets because it's free and needs no Microsoft 365 licence. Clients who want Excel can use *File → Download → Microsoft Excel (.xlsx)*. To write straight into Excel Online, replace the two Sheet nodes with **Microsoft Excel 365** nodes (operation *Append or Update Row*, match on `Job URL`).
+The workflow uses Google Sheets because it's free and needs no Microsoft 365 licence. If you prefer Excel, you can use *File → Download → Microsoft Excel (.xlsx)*. To write straight into Excel Online, replace the two Sheet nodes with **Microsoft Excel 365** nodes (operation *Append or Update Row*, match on `Job URL`).
 
 ## Troubleshooting
 
